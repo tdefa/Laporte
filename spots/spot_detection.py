@@ -13,16 +13,27 @@ import tifffile
 from numpy import argmax, nanmax, unravel_index
 from scipy.spatial import ConvexHull, Delaunay
 from scipy.spatial.distance import pdist, squareform
-#%%
-from sklearn.cluster import OPTICS, cluster_optics_dbscan
 
+
+from sklearn.cluster import OPTICS, cluster_optics_dbscan
+import math
+
+# todo re-order function
 #%%
 
 
 def spot_detection_for_clustering(sigma, rna_path, path_output_segmentaton,
                                   threshold_input=None,
                                   output_file="detected_spot_3d/",
-                                  min_distance=(3, 3, 3),):
+                                  min_distance=(3, 3, 3),
+                                  local_detection = True,
+                                  diam=20,
+                                  scale_xy=0.103,
+                                  scale_z=0.300,
+                                  min_cos_tetha=0.80,
+                                  order=5,
+                                  test_mode=False
+                                  ):
     """
     save arry of coordiante of detected spots
     Args:
@@ -47,18 +58,36 @@ def spot_detection_for_clustering(sigma, rna_path, path_output_segmentaton,
         for file_index in range(len(onlyfiles)):
             t = time.time()
             rna = tifffile.imread(path + onlyfiles[file_index])
-            print(sigma)
-            rna_log = stack.log_filter(rna, sigma)  # , float_out)
-            # local maximum detection
-            mask = detection.local_maximum_detection(rna_log, min_distance=min_distance)
-            if threshold_input is not None and onlyfiles[file_index] in threshold_input:
-                threshold = threshold_input[onlyfiles[file_index]]
-                rna_log = stack.log_filter(rna, sigma)  # , float_out = False)
-                print("manuel threshold")
-            else:    
-                threshold = detection.automated_threshold_setting(rna_log, mask)
-            print(threshold)
-            spots, _ = detection.spots_thresholding(rna_log, mask, threshold)
+
+            if local_detection:
+                print("local_detection")
+                segmentation_mask = tifffile.imread(path_output_segmentaton +"dapi_maskdapi_" + onlyfiles[file_index])
+                spots = detection_with_segmentation(rna = rna,
+                                         sigma = sigma,
+                                          min_distance = min_distance,
+                                          segmentation_mask = segmentation_mask,
+                                          diam=diam,
+                                          scale_xy=scale_xy,
+                                          scale_z=scale_z,
+                                          min_cos_tetha=min_cos_tetha,
+                                          order=order,
+                                          test_mode=test_mode)
+                threshold = None
+            else:
+                print(sigma)
+                rna_log = stack.log_filter(rna, sigma)  # , float_out)
+                # local maximum detection
+                mask = detection.local_maximum_detection(rna_log, min_distance=min_distance)
+                if threshold_input is not None and onlyfiles[file_index] in threshold_input:
+                    threshold = threshold_input[onlyfiles[file_index]]
+                    rna_log = stack.log_filter(rna, sigma)  # , float_out = False)
+                    print("manuel threshold")
+                else:
+                    threshold = detection.automated_threshold_setting(rna_log, mask)
+                print(threshold)
+                spots, _ = detection.spots_thresholding(rna_log, mask, threshold)
+
+
             dico_threshold[onlyfiles[file_index]] = [threshold, len(spots)]
             np.save(output_file + path[-6:] + onlyfiles[file_index][:-5] + 'array.npy', spots)
             print(len(spots))
@@ -176,6 +205,215 @@ def cluster_over_nuclei_3D_convex_hull(labels, spots, masks, iou_threshold=0.5, 
                     print(e)
         print(time.time()-t)
     return positive_cell, positive_cluster, negative_cluster
+
+##################################################
+## Spot detection based on cell positon plus noise removal
+##################################################
+
+
+
+
+
+
+
+def mean_cos_tetha(gy ,gx, z, yc, xc, order = 3):
+    """
+    todo add checking
+    Args:
+        gy (): gz, gy, gx = np.gradient(rna_gaus)
+        gx ():
+        z ():  z coordianate of the detected spots
+        yc (): yc coordianate of the detected spots
+        xc (): xc coordianate of the detected spots
+        order (): number of pixel in xy away from the detected spot to take into account
+    Returns:
+
+    """
+    import math
+    list_cos_tetha = []
+    for i in range(xc-order, xc+order+1):
+        for j in range(yc-order, yc+order+1):
+            if i - xc < 1 and j-yc < 1:
+                continue
+            if i < 0 or i > gx.shape[2]-1:
+                continue
+            if j < 0 or j > gx.shape[1]-1:
+                continue
+            vx = (xc - i)
+            vy = (yc - j)
+
+            cos_tetha = (gx[z, j, i]*vx + gy[z, j, i]*vy) / (np.sqrt(vx**2 +vy**2) * np.sqrt(gx[z, j, i]**2 + gy[z, j, i]**2) )
+            if math.isnan(cos_tetha):
+                continue
+            list_cos_tetha.append(cos_tetha)
+    return np.mean(list_cos_tetha)
+
+
+
+### function to remove double detection
+
+
+import itertools
+
+def remove_double_detection(input_array,
+            threshold = 5,
+            scale_z_xy = np.array([0.300, 0.103, 0.103])):
+    """
+
+    Args:
+        input_list (np.array):
+        threshold (float): min distance between point in um
+        scale_z_xy (np.array):voxel scale in um
+
+    Returns: list of point without double detection
+
+    """
+
+
+    combos = itertools.combinations(input_array, 2)
+    points_to_remove = [list(point2)
+                        for point1, point2 in combos
+                        if np.linalg.norm(point1 * scale_z_xy  - point2 * scale_z_xy) < threshold]
+
+    points_to_keep = [point for point in input_array if list(point) not in points_to_remove]
+    return points_to_keep
+
+
+### function that take fish signal, segmentation mask output the detected spots
+
+
+from scipy import ndimage
+from matplotlib import pyplot as plt
+from skimage.exposure import rescale_intensity
+from tqdm import tqdm
+
+def detection_with_segmentation(rna,
+                                sigma,
+                                min_distance,
+                              segmentation_mask,
+                              diam = 20,
+                              scale_xy = 0.103,
+                              scale_z = 0.300,
+                              min_cos_tetha = 0.75,
+                              order = 5,
+                              test_mode = False):
+    """
+
+    Args:
+        rna ():
+        sigma ():
+        min_distance ():
+        segmentation_mask ():
+        diam ():
+        scale_xy ():
+        scale_z ():
+        min_cos_tetha ():
+        order ():
+
+    Returns:
+
+    """
+    rna_log = stack.log_filter(rna, sigma)
+    mask = detection.local_maximum_detection(rna_log, min_distance=min_distance)
+    rna_gaus = ndimage.gaussian_filter(rna, sigma)
+
+    list_of_nuc = np.unique(segmentation_mask)
+    if 0 in list_of_nuc:
+        list_of_nuc = list_of_nuc[1:]
+    assert all(i >= 1 for i in list_of_nuc)
+
+    all_spots = []
+    pbar = tqdm(list_of_nuc)
+    for mask_id in pbar:
+        pbar.set_description(f"detecting rna around cell {mask_id}")
+        [Zm,Ym, Xm] = ndimage.center_of_mass(segmentation_mask == mask_id)
+        Y_min = np.max([0, Ym - diam / scale_xy]).astype(int)
+        Y_max = np.min([segmentation_mask.shape[1], Ym + diam / scale_xy]).astype(int)
+        X_min = np.max([0, Xm - diam / scale_xy]).astype(int)
+        X_max = np.min([segmentation_mask.shape[2], Xm + diam / scale_xy]).astype(int)
+        crop_mask = mask[:, Y_min:Y_max, X_min:X_max]
+        threshold = detection.automated_threshold_setting(rna_log[:, Y_min:Y_max, X_min:X_max], crop_mask)
+
+        spots, _ = detection.spots_thresholding(rna_log[:, Y_min:Y_max, X_min:X_max], crop_mask, threshold)
+
+        if min_cos_tetha is not None:
+            gz, gy, gx = np.gradient(rna_gaus[:,Y_min:Y_max, X_min:X_max])
+            new_spots = []
+            for s in spots:
+                if mean_cos_tetha(gy, gx, z=s[0], yc=s[1], xc=s[2], order=order) > min_cos_tetha:
+                    new_spots.append(s)
+
+        if test_mode: ## test mode
+            input = np.amax(rna[:,Y_min:Y_max,  X_min:X_max], 0)
+            pa_ch1, pb_ch1 = np.percentile(input, (1, 99))
+            rna_scale = rescale_intensity(input, in_range=(pa_ch1, pb_ch1), out_range=np.uint8).astype('uint8')
+            fig, ax = plt.subplots(2, 1, figsize=(15, 15))
+            plt.title(f' X {str([X_min, X_max])} + Y {str([Y_min, Y_max])}', fontsize=20)
+
+            ax[0].imshow(rna_scale)
+            ax[1].imshow(rna_scale)
+            for s in spots:
+                ax[0].scatter(s[-1], s[-2], c='red', s=28)
+            plt.show()
+
+            fig, ax = plt.subplots(2, 1, figsize=(15, 15))
+            plt.title(f'with remove artf  order{order}  min_tetha {min_cos_tetha}  X {str([X_min, X_max])} + Y {str([Y_min, Y_max])}', fontsize=20)
+            ax[0].imshow(rna_scale)
+            ax[1].imshow(rna_scale)
+            for s in new_spots:
+                ax[0].scatter(s[-1], s[-2], c='red', s=28)
+            plt.show()
+        spots = new_spots
+        spots = np.array(spots)
+        if len(spots) > 0:
+            spots = spots + np.array([0, Y_min, X_min])
+            all_spots += list(spots)
+
+    all_spots = remove_double_detection(input_array = np.array(all_spots),
+                threshold = 5,
+                scale_z_xy = np.array([0.300, 0.103, 0.103]))
+
+    if test_mode:
+        input = np.amax(rna, 0)
+        pa_ch1, pb_ch1 = np.percentile(input, (1, 99))
+        rna_scale = rescale_intensity(input, in_range=(pa_ch1, pb_ch1), out_range=np.uint8).astype('uint8')
+        fig, ax = plt.subplots(2, 1, figsize=(40, 40))
+        ax[0].imshow(rna_scale)
+        ax[1].imshow(rna_scale)
+        for s in all_spots:
+            ax[0].scatter(s[-1], s[-2], c='red', s=28)
+        plt.show()
+
+    return all_spots
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

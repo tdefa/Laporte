@@ -15,6 +15,7 @@ from cellpose import models
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 from utils_ext.cellpose_utilis import stitch3D
+from spots.post_processing import erase_solitary, erase_small_nuclei
 
 
 def segment_nuclei(path_to_dapi, path_to_mask_dapi, dico_param, model, save=True, ):
@@ -31,6 +32,7 @@ def segment_nuclei(path_to_dapi, path_to_mask_dapi, dico_param, model, save=True
     """
     onlyfiles = [f for f in listdir(path_to_dapi) if isfile(join(path_to_dapi, f))]
     print(onlyfiles)
+    print(f'dico_param{dico_param}')
     for f in tqdm(onlyfiles):
         print(f)
         img = tifffile.imread(path_to_dapi + f)
@@ -47,14 +49,18 @@ def segment_nuclei(path_to_dapi, path_to_mask_dapi, dico_param, model, save=True
                                                  flow_threshold=dico_param["flow_threshold"],
                                                  do_3D=dico_param["do_3D"],
                                                  stitch_threshold=0)
-        try:
-            masks = stitch3D(masks, dico_param["stitch_threshold"])
-        except Exception as e:
-            print(e)
-            print("the file %s lead to an error" % f)
-            print()
-            break
-        masks = np.array(masks)
+
+        masks = stitch3D(masks, dico_param["stitch_threshold"])
+        masks = np.array(masks, dtype = np.int16)
+        tifffile.imwrite(path_to_mask_dapi + "dapi_mask" + f, data=masks, dtype=masks.dtype)
+
+        if len(masks.shape) and dico_param["erase_solitary"]:
+            masks = erase_solitary(masks)
+        if dico_param["erase_small_nuclei"] is not None:
+            print(f'erase_small_nuclei threshold {dico_param["erase_small_nuclei"]}')
+            masks = erase_small_nuclei(masks)
+        tifffile.imwrite(path_to_mask_dapi + "post_process_dapi_mask" + f, data=masks, dtype=masks.dtype)
+
         if len(masks.shape) < 3:
             plt.imshow(masks * 3)
             plt.show()

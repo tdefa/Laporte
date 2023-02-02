@@ -2,7 +2,7 @@
 
 
 import numpy as np
-
+from tqdm import tqdm
 
 def erase_solitary(mask): #mask en 3D
     """
@@ -38,10 +38,13 @@ def erase_solitary(mask): #mask en 3D
         mask_bis[-1] += (mask[-1] == nuc) * mask[-1]
     return mask_bis
 
+
+
+
 def erase_small_nuclei(mask, min_size = 340):
-    mask_bis = np.zeros(mask.shape)
-    for i in range(len(mask)):
-        for nuc in np.unique(mask[i]):
-            if np.sum((mask[i] == nuc).astype(int)) > min_size:
-                mask_bis[i] += (mask[i] == nuc) * mask[i]
-    return mask_bis
+    for nuc in tqdm(np.unique(mask)[1:]): ## remove zero
+        sum_size = np.sum((mask == nuc).astype(int))
+        print(sum_size)
+        if sum_size < min_size:
+                mask[mask == nuc] = 0
+    return mask

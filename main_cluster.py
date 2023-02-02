@@ -117,10 +117,16 @@ def main(args):
             dico_param["gpu"] = bool(args.gpu)
             dico_param["flow_threshold"] = args.flow_threshold
             dico_param["do_3D"] = args.do_3D
-            dico_param["mip"] = args.mip
-            dico_param["projected_focused"] = False
             dico_param["stitch_threshold"] = args.stitch_threshold
-            segment_nuclei(path_to_dapi, path_output_segmentaton, dico_param, model)
+            dico_param["erase_solitary"] = args.erase_solitary
+            dico_param["erase_small_nuclei"] = args.erase_small_nuclei
+            dico_param["mip"] = args.mip
+
+            segment_nuclei(path_to_dapi = path_to_dapi,
+                           path_to_mask_dapi = path_output_segmentaton,
+                           dico_param = dico_param,
+                           model = model,
+                           save=True)
 
         ###########
         # check that all the nuclei are segmented
@@ -144,7 +150,15 @@ def main(args):
                                                            rna_path=[path_to_af568 + 'AF568_'],
                                                            path_output_segmentaton=path_output_segmentaton,
                                                            threshold_input=dico_cy3,
-                                                           output_file=path_to_project_c + "detected_spot_3d" + "/", )
+                                                           output_file=path_to_project_c + "detected_spot_3d" + "/",
+                                                           local_detection=args.local_detection,
+                                                           diam=args.cube_size_detection,
+                                                           scale_xy=args.scale[1],
+                                                           scale_z=args.scale[0],
+                                                           min_cos_tetha=args.min_cos_tetha,
+                                                           order=args.order,
+                                                           test_mode=False
+                                                           )
             np.save(path_to_project_c + 'dico_threshold_AF568.npy', dico_threshold)
             with open(path_to_project_c + 'dico_threshold_AF568.txt', 'w') as f:
                 f.write(str(dico_threshold))
@@ -155,7 +169,15 @@ def main(args):
                                                            rna_path=[path_to_af647 + 'AF647_'],
                                                            path_output_segmentaton=path_output_segmentaton,
                                                            threshold_input=dico_cy5,
-                                                           output_file=path_to_project_c + "detected_spot_3d" + "/", )
+                                                           output_file=path_to_project_c + "detected_spot_3d" + "/",
+                                                           local_detection=args.local_detection,
+                                                           diam=args.cube_size_detection,
+                                                           scale_xy=args.scale[1],
+                                                           scale_z=args.scale[0],
+                                                           min_cos_tetha=args.min_cos_tetha,
+                                                           order=args.order,
+                                                           test_mode=False
+                                                           )
             np.save(path_to_project_c + 'dico_threshold_AF647.npy', dico_threshold)
             with open(path_to_project_c + 'dico_threshold_AF647.txt', 'w') as f:
                 f.write(str(dico_threshold))
@@ -637,9 +659,9 @@ if __name__ == '__main__':
 
     parser.add_argument('-ptz', "--path_to_czi_folder",
                         type=str,
-                        default="/media/tom/250822/czi_folder/",
+                        default="/media/tom/T7/Lustra_data2023_02_01/",
                         help='path to the parent folder containing the czi')
-    parser.add_argument("--list_folder", nargs="+", default=['00_Macrophages/'],
+    parser.add_argument("--list_folder", nargs="+", default=['Cell_06_Cy5_aCap_Cy3_Rtkn2_1/'],
                         help=' list of folders in the czi folders to analyse')
     parser.add_argument('--new_probe', type=str, nargs='+', action='append', default=[],
                         help=" command to add new probes or change parameters of existing one to add it do  "
@@ -659,12 +681,23 @@ if __name__ == '__main__':
                         help='key word use to name .npy files storing results of the analysis')
 
     # cellpose arg default param are for 3D
-    parser.add_argument('-d', "--diameter", type=float, default=80, help='cellpose parameter')
+    parser.add_argument('-d', "--diameter",  default=80, help='cellpose parameter')
     parser.add_argument('-ft', "--flow_threshold", type=float, default=0.75, help='cellpose parameter')
     parser.add_argument('-d3', "--do_3D", type=bool, default=False, help='cellpose parameter')
     parser.add_argument('-m', "--mip", type=bool, default=False, help='cellpose parameter')
-    parser.add_argument('-st', "--stitch_threshold", type=float, default=0.25, help='cellpose parameter')
-    parser.add_argument('-er', "--erase_solitary", type=int, default=1, help='erase too small nuclei')
+    parser.add_argument('-st', "--stitch_threshold", type=float, default=0.3, help='cellpose parameter')
+    parser.add_argument('-er', "--erase_solitary", type=int, default=1, help='erase nuclei present in only one Z stack')
+    parser.add_argument( "--erase_small_nuclei", type=int, default=500, help='erase too small nuclei enter the min number of voxel, function ignore if it is 0 or None')
+
+    #detection parameter
+
+    parser.add_argument("--local_detection", type=int, default=1, help='if not zero (True) it detect'
+                                                                       ' spots individually around all nuclei')
+    parser.add_argument("--cube_size_detection", type=int, default=20, help=' in um cube size around nuclei where spots are detected')
+    parser.add_argument("--min_cos_tetha", type=int, default=0.8, help=' min cosine symetrie to be accepted as real spots')
+    parser.add_argument("--order", type=int, default=5, help='size of the cube in pixel where measure the symetrie')
+
+
 
     # task to do
     parser.add_argument('-prczi', "--prepare_czi", type=int, default=1, help='if 1 do : prepare_czi to tiff ')
@@ -673,8 +706,11 @@ if __name__ == '__main__':
     parser.add_argument("--classify", type=int, default=1, help='if 1do classification / cell type mapping')
     parser.add_argument("--save_plot", type=int, default=1, help='if 1 do plot')
 
+
+
+
     # parameter for clustering and cell type calling
-    parser.add_argument("--scale", nargs='+', default=[300, 103, 103], help='')
+    parser.add_argument("--scale", nargs='+', default=[0.300, 0.103, 0.103], help='')
 
     parser.add_argument("--epsi_cluster_cy3", default="é", help="value set in the code if not a float")
     parser.add_argument("--epsi_cluster_cy5", default="e", help="value set in the code if not a float ")
