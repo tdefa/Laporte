@@ -13,7 +13,10 @@ import tifffile
 from numpy import argmax, nanmax, unravel_index
 from scipy.spatial import ConvexHull, Delaunay
 from scipy.spatial.distance import pdist, squareform
-
+from scipy import ndimage
+from matplotlib import pyplot as plt
+from skimage.exposure import rescale_intensity
+from tqdm import tqdm
 
 from sklearn.cluster import OPTICS, cluster_optics_dbscan
 import math
@@ -283,15 +286,12 @@ def remove_double_detection(input_array,
 ### function that take fish signal, segmentation mask output the detected spots
 
 
-from scipy import ndimage
-from matplotlib import pyplot as plt
-from skimage.exposure import rescale_intensity
-from tqdm import tqdm
+
 
 def detection_with_segmentation(rna,
                                 sigma,
-                                min_distance,
-                              segmentation_mask,
+                                min_distance = [3,3, 3],
+                              segmentation_mask = None,
                               diam = 20,
                               scale_xy = 0.103,
                               scale_z = 0.300,
@@ -302,15 +302,15 @@ def detection_with_segmentation(rna,
     """
 
     Args:
-        rna ():
-        sigma ():
-        min_distance ():
-        segmentation_mask ():
-        diam ():
-        scale_xy ():
-        scale_z ():
-        min_cos_tetha ():
-        order ():
+        rna (np.array): fish image
+        sigma (): sigma in gaussian filter
+        min_distance (): big fish parameter
+        segmentation_mask (np.array):  nuclei segmentation
+        diam (): radias size in um around nuclei where to detect spots
+        scale_xy (): pixel xy size in um
+        scale_z (): pixel e size in um
+        min_cos_tetha (float): value between 0 and 1, if 0 it does not remove anything, if 1 it accept only perfect radial symetric spots
+        order (): radias size in pixel around spots where to check radail symetrie spts
         threshold_merge_limit (float): threshold below to detected point are considere the same
 
     Returns:
