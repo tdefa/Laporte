@@ -256,7 +256,7 @@ def mean_cos_tetha(gy ,gx, z, yc, xc, order = 3):
 import itertools
 
 def remove_double_detection(input_array,
-            threshold = 5,
+            threshold = 0.3,
             scale_z_xy = np.array([0.300, 0.103, 0.103])):
     """
 
@@ -268,9 +268,10 @@ def remove_double_detection(input_array,
     Returns: list of point without double detection
 
     """
+    unique_tuple = [tuple(s) for s in input_array]
+    unique_tuple = list(set((unique_tuple)))
 
-
-    combos = itertools.combinations(input_array, 2)
+    combos = itertools.combinations(unique_tuple, 2)
     points_to_remove = [list(point2)
                         for point1, point2 in combos
                         if np.linalg.norm(point1 * scale_z_xy  - point2 * scale_z_xy) < threshold]
@@ -296,7 +297,8 @@ def detection_with_segmentation(rna,
                               scale_z = 0.300,
                               min_cos_tetha = 0.75,
                               order = 5,
-                              test_mode = False):
+                              test_mode = False,
+                              threshold_merge_limit = 0.3):
     """
 
     Args:
@@ -309,6 +311,7 @@ def detection_with_segmentation(rna,
         scale_z ():
         min_cos_tetha ():
         order ():
+        threshold_merge_limit (float): threshold below to detected point are considere the same
 
     Returns:
 
@@ -370,7 +373,7 @@ def detection_with_segmentation(rna,
             all_spots += list(spots)
 
     all_spots = remove_double_detection(input_array = np.array(all_spots),
-                threshold = 5,
+                threshold =threshold_merge_limit,
                 scale_z_xy = np.array([0.300, 0.103, 0.103]))
 
     if test_mode:

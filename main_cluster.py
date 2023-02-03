@@ -46,7 +46,8 @@ def main(args):
     dico_cy5 = json.loads(args.manual_threshold_cy5)
     print(f"manual threshold {dico_cy3} {dico_cy5} ")
     # default probe parameters
-    dico_param_probes = {"Lamp3": (32, 0.42),
+    dico_param_probes = {
+                        "Lamp3": (32, 0.42),
                          "Pdgfra": (35, 0.42),
                          "Chil3": (20, 0.55),
                          'Cap': (35, 0.30),
@@ -147,7 +148,7 @@ def main(args):
             if not os.path.exists(path_to_project_c + "detected_spot_3d" + "/"):
                 os.mkdir(path_to_project_c + "detected_spot_3d" + "/")
             dico_threshold = spot_detection_for_clustering(sigma=[1.25, 1.25, 1.25],
-                                                           rna_path=[path_to_af568 + 'AF568_'],
+                                                           rna_path=  [path_to_af568 + 'AF568_'],
                                                            path_output_segmentaton=path_output_segmentaton,
                                                            threshold_input=dico_cy3,
                                                            output_file=path_to_project_c + "detected_spot_3d" + "/",
@@ -661,7 +662,7 @@ if __name__ == '__main__':
                         type=str,
                         default="/media/tom/T7/Lustra_data2023_02_01/",
                         help='path to the parent folder containing the czi')
-    parser.add_argument("--list_folder", nargs="+", default=['Cell_06_Cy5_aCap_Cy3_Rtkn2_1/'],
+    parser.add_argument("--list_folder", nargs="+", default=['test_data/'],
                         help=' list of folders in the czi folders to analyse')
     parser.add_argument('--new_probe', type=str, nargs='+', action='append', default=[],
                         help=" command to add new probes or change parameters of existing one to add it do  "
